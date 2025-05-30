@@ -5,29 +5,33 @@ import sharp from "sharp";
 export async function POST(req: NextRequest) {
   const data = await req.formData();
   const text = data.get("text") as string;
-  const logoFile = data.get("logo") as File;
+  const logoFile = data.get("logo") as File | null;
 
-  if (!text || !logoFile) {
-    return NextResponse.json({ error: "Missing text or logo file" }, { status: 400 });
+  if (!text) {
+    return NextResponse.json({ error: "Missing text" }, { status: 400 });
   }
 
   try {
-    // Generate base QR code
     const qrBuffer = await QRCode.toBuffer(text, {
-      errorCorrectionLevel: "H", // High to tolerate logo overlay
+      errorCorrectionLevel: "H",
       width: 500,
-      margin: 2,
     });
 
-    const qrImage = sharp(qrBuffer);
-    const { width, height } = await qrImage.metadata();
+    // If no logo, return QR code directly
+    if (!logoFile || logoFile.size === 0) {
+      return new NextResponse(qrBuffer, {
+        headers: {
+          "Content-Type": "image/png",
+          "Content-Disposition": "inline; filename=qr.png",
+        },
+      });
+    }
 
     const logoArrayBuffer = await logoFile.arrayBuffer();
     const logoBuffer = Buffer.from(logoArrayBuffer);
 
     const logoSize = 100;
 
-    // Create a white square background for logo
     const whiteBox = await sharp({
       create: {
         width: logoSize + 10,
@@ -42,7 +46,9 @@ export async function POST(req: NextRequest) {
       .png()
       .toBuffer();
 
-    // Composite QR + white square + logo
+    const qrImage = sharp(qrBuffer);
+    const { width, height } = await qrImage.metadata();
+
     const finalImage = await qrImage
       .composite([
         {
